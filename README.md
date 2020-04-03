@@ -1,5 +1,7 @@
 # ghoulish
 
+** NOT YET AVAILABLE - IN DEVELOPMENT **
+
 A terminal-based music player.
 
 ## Configuration
