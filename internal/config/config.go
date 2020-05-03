@@ -5,34 +5,37 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 // Setup setups up application configuration
 func Setup(ctx context.Context) error {
-	// Log as JSON instead of the default ASCII formatter.
-	logrus.SetFormatter(&logrus.JSONFormatter{})
+	// TODO: make this configurable
+	logToFile := false
+	if logToFile {
+		// Log as JSON instead of the default ASCII formatter.
+		logrus.SetFormatter(&logrus.JSONFormatter{})
 
-	logfile := "app.log"
-	f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE, 0755)
-	if err != nil {
-		logrus.WithError(err).Fatal("could not open logfile")
+		logfile := "app.log"
+		f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE, 0755)
+		if err != nil {
+			log.WithError(err).Fatal("could not open logfile")
+		}
+
+		err = os.Truncate(logfile, 0)
+		if err != nil {
+			log.WithError(err).Fatal("could not truncate file")
+		}
+
+		log.SetOutput(f)
 	}
 
-	err = os.Truncate(logfile, 0)
-	if err != nil {
-		logrus.WithError(err).Fatal("could not truncate file")
-	}
-
-	// write to logfile
-	logrus.SetOutput(f)
-
-	// Only log the warning severity or above.
-	loglevel := "debug"
-	level, err := logrus.ParseLevel(loglevel)
+	loglevel := "warn"
+	level, err := log.ParseLevel(loglevel)
 	if err != nil {
 		return err
 	}
-	logrus.SetLevel(level)
+	log.SetLevel(level)
 
 	return nil
 }

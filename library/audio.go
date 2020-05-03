@@ -51,7 +51,7 @@ type LocalAudioShelf struct {
 }
 
 func NewLocalAudioShelf(directory string) (*LocalAudioShelf, error) {
-	r := regexp.MustCompile("(.*).mp3$")
+	r := regexp.MustCompile("(.*).[mp3|flac]$")
 
 	l := LocalAudioShelf{
 		directory:   directory,
@@ -95,7 +95,13 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 				return nil
 			}
 
+			if info.IsDir() {
+				return nil
+			}
+
 			if !l.shouldInclude(path) {
+				logrus.WithField("path", path).Debug("discarding path")
+				return nil
 			}
 
 			logrus.WithField("path", path).Debug("adding path to library")

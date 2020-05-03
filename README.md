@@ -1,5 +1,7 @@
 # grump
 
+![](screenshot.png)
+
 ```
 Great but
 Really
@@ -8,12 +10,11 @@ Media
 Player
 ```
 
-** NOT YET AVAILABLE - IN DEVELOPMENT **
-
 A very minimal CLI audio player.
 
 ## Features
 
+* cross-platform
 * mp3/flac support
 * ID3 tag scanning
 
@@ -32,20 +33,26 @@ go get github.com/dhulihan/grump
 go get github.com/dhulihan/grump
 ```
 
+## Usage
+
+```
+grump path/to/some/audio/files/
+```
+
 ## Backlog (move this to github later)
 
-* Add help/legend [MVP]
-	* can add this to status box before any song is playing, version too
 * add search support [HIGH]
 * add ID3 tag editing support [HIGH]
+* add cli flags for log level, etc. [HIGH]
 * add envvars/rcfile for specifying CLI flags [HIGH]
 * Shuffle mode [HIGH]
-* add local wav support [HIGH]
+* add WAV support [HIGH]
 * Maintain same speed/vol between tracks [MED]
 * "flash" vol/progress/speed/etc. [MED]
 * add support for event hooks [MED]
 * CLI subcommands [MED] - what do we need this for?
 * add support for other media sources (remote, spotify, etc.) [MED]
+* customize columns [MED]
 * "Now Playing" playlist [LOW]
 * Accept file path CLI argument and start playing immediately [LOW]
 * Tech Debt
