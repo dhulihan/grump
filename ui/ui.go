@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/dhulihan/ghoulish/library"
-	"github.com/dhulihan/ghoulish/player"
+	"github.com/dhulihan/grump/library"
+	"github.com/dhulihan/grump/player"
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
 	log "github.com/sirupsen/logrus"

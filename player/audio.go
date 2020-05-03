@@ -1,7 +1,7 @@
 package player
 
 import (
-	"github.com/dhulihan/ghoulish/library"
+	"github.com/dhulihan/grump/library"
 )
 
 const (

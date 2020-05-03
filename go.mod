@@ -1,4 +1,4 @@
-module github.com/dhulihan/ghoulish
+module github.com/dhulihan/grump
 
 go 1.14
 

@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dhulihan/ghoulish/library"
+	"github.com/dhulihan/grump/library"
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/effects"
 	"github.com/faiface/beep/flac"

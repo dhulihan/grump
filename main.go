@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dhulihan/ghoulish/internal/config"
-	"github.com/dhulihan/ghoulish/library"
-	"github.com/dhulihan/ghoulish/player"
-	"github.com/dhulihan/ghoulish/ui"
+	"github.com/dhulihan/grump/internal/config"
+	"github.com/dhulihan/grump/library"
+	"github.com/dhulihan/grump/player"
+	"github.com/dhulihan/grump/ui"
 	"github.com/sirupsen/logrus"
 )
 
