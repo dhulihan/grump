@@ -36,12 +36,13 @@ go get github.com/dhulihan/grump
 ## Usage
 
 ```
-grump path/to/some/audio/files/
+grump path/to/some/audio/files
 ```
 
 ## Backlog (move this to github later)
 
 * add search support [HIGH]
+* sort by title/name/track [HIGH]
 * add ID3 tag editing support [HIGH]
 * add cli flags for log level, etc. [HIGH]
 * add envvars/rcfile for specifying CLI flags [HIGH]

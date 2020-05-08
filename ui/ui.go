@@ -43,16 +43,16 @@ func start(ctx context.Context, ml library.AudioShelf, pl player.AudioPlayer) {
 
 func defaultTheme() *tview.Theme {
 	return &tview.Theme{
-		PrimitiveBackgroundColor:    tcell.ColorBlack,    // Main background color for primitives.
-		ContrastBackgroundColor:     tcell.ColorBlue,     // Background color for contrasting elements.
-		MoreContrastBackgroundColor: tcell.ColorGreen,    // Background color for even more contrasting elements.
-		BorderColor:                 tcell.ColorGrey,     // Box borders.
-		TitleColor:                  tcell.ColorYellow,   // Box titles.
-		GraphicsColor:               tcell.ColorFuchsia,  // Graphics.
-		PrimaryTextColor:            tcell.ColorWhite,    // Primary text.
-		SecondaryTextColor:          tcell.ColorAqua,     // Secondary text (e.g. labels).
-		TertiaryTextColor:           tcell.ColorGreen,    // Tertiary text (e.g. subtitles, notes).
-		InverseTextColor:            tcell.ColorBlue,     // Text on primary-colored backgrounds.
-		ContrastSecondaryTextColor:  tcell.ColorDarkCyan, // Secondary text on ContrastBackgroundColor-colored backgrounds.
+		PrimitiveBackgroundColor:    tcell.ColorBlack,          // Main background color for primitives.
+		ContrastBackgroundColor:     tcell.ColorBlue,           // Background color for contrasting elements.
+		MoreContrastBackgroundColor: tcell.ColorGreen,          // Background color for even more contrasting elements.
+		BorderColor:                 tcell.ColorGrey,           // Box borders.
+		TitleColor:                  tcell.ColorCoral,          // Box titles.
+		GraphicsColor:               tcell.ColorFuchsia,        // Graphics.
+		PrimaryTextColor:            tcell.ColorWhite,          // Primary text.
+		SecondaryTextColor:          tcell.ColorAqua,           // Secondary text (e.g. labels).
+		TertiaryTextColor:           tcell.ColorMediumSeaGreen, // Tertiary text (e.g. subtitles, notes).
+		InverseTextColor:            tcell.ColorBlue,           // Text on primary-colored backgrounds.
+		ContrastSecondaryTextColor:  tcell.ColorDarkCyan,       // Secondary text on ContrastBackgroundColor-colored backgrounds.
 	}
 }
