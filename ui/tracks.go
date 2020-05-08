@@ -385,7 +385,7 @@ func (t *TrackPage) updateProgress(prog player.PlayState, track *library.Track) 
 func (t *TrackPage) welcome() {
 	t.progressBox.Clear().
 		SetCell(0, 0, tview.NewTableCell("welcome to grump")).
-		SetCell(0, 1, &tview.TableCell{Text: "v0.0.0", Color: t.theme.TitleColor, NotSelectable: true}).
+		SetCell(0, 1, &tview.TableCell{Text: fmt.Sprintf("%s (%s)", build.Version, build.Commit), Color: t.theme.TitleColor, NotSelectable: true}).
 		SetCell(1, 0, tview.NewTableCell("files scanned")).
 		SetCell(1, 1, &tview.TableCell{Text: fmt.Sprintf("%d", len(t.tracks)), Color: t.theme.SecondaryTextColor, NotSelectable: true}).
 		SetCell(2, 0, tview.NewTableCell("for help, press")).

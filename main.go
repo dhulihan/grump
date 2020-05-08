@@ -12,6 +12,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
+)
+
 func main() {
 	ctx := context.Background()
 
@@ -49,7 +56,12 @@ func main() {
 		logrus.WithError(err).Fatal("could not set up audio player")
 	}
 
-	err = ui.Start(ctx, db, player)
+	build := ui.BuildInfo{
+		Version: version,
+		Commit:  commit,
+	}
+
+	err = ui.Start(ctx, build, db, player)
 	if err != nil {
 		logrus.WithError(err).Fatal("ui exited with an error")
 	}

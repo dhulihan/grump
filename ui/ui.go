@@ -14,13 +14,20 @@ var (
 	app         *tview.Application // The tview application.
 	pages       *tview.Pages       // The application pages.
 	finderFocus tview.Primitive    // The primitive in the Finder that last had focus.
+	build       BuildInfo
 )
 
+type BuildInfo struct {
+	Version string
+	Commit  string
+}
+
 // Start starts the ui
-func Start(ctx context.Context, db *library.Library, musicPlayer player.AudioPlayer) error {
+func Start(ctx context.Context, b BuildInfo, db *library.Library, musicPlayer player.AudioPlayer) error {
 	// hard code first for now
 	musicLibrary := db.AudioShelves[0]
 	app = tview.NewApplication()
+	build = b
 	start(ctx, musicLibrary, musicPlayer)
 	if err := app.Run(); err != nil {
 		return fmt.Errorf("Error running application: %s", err)
