@@ -43,6 +43,14 @@ go get github.com/dhulihan/grump
 grump path/to/some/audio/files
 ```
 
+## Development
+
+### Building
+
+```sh
+docker-compose run build
+```
+
 ## Backlog (move this to github later)
 
 * add search support [HIGH]
@@ -51,7 +59,6 @@ grump path/to/some/audio/files
 * add cli flags for log level, etc. [HIGH]
 * add envvars/rcfile for specifying CLI flags [HIGH]
 * Shuffle mode [HIGH]
-* add WAV support [HIGH]
 * Maintain same speed/vol between tracks [MED]
 * "flash" vol/progress/speed/etc. [MED]
 * add support for event hooks [MED]
