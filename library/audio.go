@@ -1,19 +1,21 @@
 package library
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/dhowden/tag"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 // AudioShelf is an abstract collection of audio. A shelf has one source type
 // (local, internet, spotify account, etc.). For example, a LocalAudioShelf
 // contains files stored in a local filesystem.
 type AudioShelf interface {
-	Directory() string
 	Tracks() []Track
 
 	// Scan searches for new files to add to the library
@@ -51,7 +53,7 @@ type LocalAudioShelf struct {
 }
 
 func NewLocalAudioShelf(directory string) (*LocalAudioShelf, error) {
-	r := regexp.MustCompile("(.*).[mp3|flac]$")
+	r := regexp.MustCompile("(.*).[mp3|flac|wav|ogg]$")
 
 	l := LocalAudioShelf{
 		directory:   directory,
@@ -69,14 +71,14 @@ func (l *LocalAudioShelf) Scan() (uint64, error) {
 	if err != nil {
 		return i, err
 	}
-	logrus.WithField("count", i).Debug("paths scanned")
+	log.WithField("count", i).Debug("paths scanned")
 
 	// scan metadata
 	i, err = l.metadataScan()
 	if err != nil {
 		return i, err
 	}
-	logrus.WithField("count", i).Debug("files scanned for metadata")
+	log.WithField("count", i).Debug("files scanned for metadata")
 	return i, nil
 }
 
@@ -86,9 +88,9 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 
 	err := filepath.Walk(l.directory,
 		func(path string, info os.FileInfo, err error) error {
-			logrus.WithField("path", path).Debug("walking path")
+			log.WithField("path", path).Debug("walking path")
 			if err != nil {
-				logrus.WithFields(logrus.Fields{
+				log.WithFields(log.Fields{
 					"path":  path,
 					"error": err,
 				}).Error("could not walk path")
@@ -100,11 +102,11 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 			}
 
 			if !l.shouldInclude(path) {
-				logrus.WithField("path", path).Debug("discarding path")
+				log.WithField("path", path).Debug("discarding path")
 				return nil
 			}
 
-			logrus.WithField("path", path).Debug("adding path to library")
+			log.WithField("path", path).Debug("adding path to library")
 			l.files = append(l.files, path)
 			scanCount++
 
@@ -119,7 +121,8 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 }
 
 func (l *LocalAudioShelf) shouldInclude(path string) bool {
-	match := l.filePattern.Find([]byte(path))
+	p := strings.ToLower(path)
+	match := l.filePattern.Find([]byte(p))
 
 	if match == nil {
 		return false
@@ -128,60 +131,98 @@ func (l *LocalAudioShelf) shouldInclude(path string) bool {
 	return true
 }
 
-func (l *LocalAudioShelf) Directory() string {
-	return l.directory
-}
-
 func (l *LocalAudioShelf) metadataScan() (uint64, error) {
 	tracks := []Track{}
+	ctx := context.Background()
 
 	// TODO: scan for metadata/id3
 	var scanCount uint64
 	for _, file := range l.files {
-		f, err := os.Open(file)
+		ext := strings.ToLower(filepath.Ext(file))
+		var scanner TrackScanner
+
+		switch ext {
+		case ".mp3", ".flac", ".ogg":
+			scanner = &TagScanner{}
+		case ".wav":
+			scanner = &WAVScanner{}
+		default:
+			log.WithFields(log.Fields{
+				"path": file,
+				"ext":  ext,
+			}).Error("unsupported file extension")
+		}
+
+		track, err := scanner.Scan(ctx, file)
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"path":  file,
 				"error": err,
-			}).Error("could not open file")
+			}).Error("could not scan metadata")
+
 			continue
 		}
-
-		m, err := tag.ReadFrom(f)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"path":  file,
-				"error": err,
-			}).Error("could not read metadata")
-			continue
-		}
-
-		trackNumber, trackTotal := m.Track()
-		discNumber, discTotal := m.Disc()
-
-		track := Track{
-			Title:       m.Title(),
-			Artist:      m.Artist(),
-			Album:       m.Album(),
-			AlbumArtist: m.AlbumArtist(),
-			DiscNumber:  discNumber,
-			DiscTotal:   discTotal,
-			TrackNumber: trackNumber,
-			TrackTotal:  trackTotal,
-			Composer:    m.Composer(),
-			Year:        m.Year(),
-			Genre:       m.Genre(),
-			Lyrics:      m.Lyrics(),
-			Comment:     m.Comment(),
-			FileType:    string(m.FileType()),
-			Path:        file,
-		}
-		tracks = append(tracks, track)
+		tracks = append(tracks, *track)
 		scanCount++
 	}
 
 	l.tracks = tracks
 	return scanCount, nil
+}
+
+// TrackScanner scans something and returns a track
+type TrackScanner interface {
+	Scan(context.Context, string) (*Track, error)
+}
+
+// TagScanner uses the tag package
+type TagScanner struct{}
+
+// Scan returns metadata for for a track using tag package
+func (s *TagScanner) Scan(ctx context.Context, path string) (*Track, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("could not open file [%s]: [%s]", path, err.Error())
+	}
+	defer f.Close()
+
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		return nil, fmt.Errorf("could not read metadata [%s]: [%s]", path, err.Error())
+	}
+
+	trackNumber, trackTotal := m.Track()
+	discNumber, discTotal := m.Disc()
+
+	track := Track{
+		Title:       m.Title(),
+		Artist:      m.Artist(),
+		Album:       m.Album(),
+		AlbumArtist: m.AlbumArtist(),
+		DiscNumber:  discNumber,
+		DiscTotal:   discTotal,
+		TrackNumber: trackNumber,
+		TrackTotal:  trackTotal,
+		Composer:    m.Composer(),
+		Year:        m.Year(),
+		Genre:       m.Genre(),
+		Lyrics:      m.Lyrics(),
+		Comment:     m.Comment(),
+		FileType:    string(m.FileType()),
+		Path:        path,
+	}
+	return &track, nil
+}
+
+type WAVScanner struct{}
+
+func (s *WAVScanner) Scan(ctx context.Context, path string) (*Track, error) {
+	track := Track{
+		Title:    path,
+		FileType: "WAV",
+		Path:     path,
+	}
+	return &track, nil
 }
 
 // TODO scan this

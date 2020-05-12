@@ -1,7 +1,6 @@
 package player
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -12,6 +11,8 @@ import (
 	"github.com/faiface/beep/flac"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
+	"github.com/faiface/beep/vorbis"
+	"github.com/faiface/beep/wav"
 	"github.com/sirupsen/logrus"
 )
 
@@ -81,8 +82,16 @@ func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (*Controller,
 		if err != nil {
 			return nil, err
 		}
+	case "OGG":
+		s, format, err = vorbis.Decode(f)
+		if err != nil {
+			return nil, err
+		}
 	case "WAV":
-		return nil, errors.New("wav files not supported yet")
+		s, format, err = wav.Decode(f)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unsupported file type [%s]", track.FileType)
 	}

@@ -15,8 +15,12 @@ A very minimal CLI audio player.
 ## Features
 
 * cross-platform
-* mp3/flac support
 * ID3 tag scanning
+* Supports
+	* FLAC
+	* MP3
+	* OGG/Vorbis
+	* WAV
 
 ## Install
 
