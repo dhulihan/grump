@@ -53,7 +53,7 @@ type LocalAudioShelf struct {
 }
 
 func NewLocalAudioShelf(directory string) (*LocalAudioShelf, error) {
-	r := regexp.MustCompile("(.*).[mp3|flac|wav|ogg]$")
+	r := regexp.MustCompile(`(.*).(mp3|flac|wav|ogg)$`)
 
 	l := LocalAudioShelf{
 		directory:   directory,
@@ -101,7 +101,7 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 				return nil
 			}
 
-			if !l.shouldInclude(path) {
+			if !l.ShouldInclude(path) {
 				log.WithField("path", path).Debug("discarding path")
 				return nil
 			}
@@ -120,7 +120,8 @@ func (l *LocalAudioShelf) pathScan() (uint64, error) {
 	return scanCount, nil
 }
 
-func (l *LocalAudioShelf) shouldInclude(path string) bool {
+// ShouldInclude checks if we should include the file path in
+func (l *LocalAudioShelf) ShouldInclude(path string) bool {
 	p := strings.ToLower(path)
 	match := l.filePattern.Find([]byte(p))
 
@@ -151,6 +152,7 @@ func (l *LocalAudioShelf) metadataScan() (uint64, error) {
 				"path": file,
 				"ext":  ext,
 			}).Error("unsupported file extension")
+			continue
 		}
 
 		track, err := scanner.Scan(ctx, file)
