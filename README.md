@@ -61,5 +61,8 @@ docker-compose run build
 ### Releasing
 
 ```sh
-
+VERSION=0.0.0
+git tag VERSION
+git push origin VERSION
+goreleaser release --rm-dist
 ```
