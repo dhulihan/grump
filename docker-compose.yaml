@@ -1,6 +1,6 @@
 version: '3'
 services:
-  build:
+  build-linux:
     image: gobuilder
     build:
       context: .
@@ -9,7 +9,7 @@ services:
     volumes:
       - ".:/data"
     entrypoint:
-      - ./scripts/build.sh
+      - ./scripts/build-linux.sh
     #env_file:
       #- ${ENV_FILE:-docker/local.env}
 
