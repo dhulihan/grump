@@ -37,7 +37,7 @@ go get github.com/dhulihan/grump
 go get github.com/dhulihan/grump
 ```
 
-* You can also download pre-build binaries on the [releases](./releases) page.
+* You can also download pre-build binaries on the [releases](https://github.com/dhulihan/grump/releases) page.
 
 ## Usage
 
