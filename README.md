@@ -37,6 +37,8 @@ go get github.com/dhulihan/grump
 go get github.com/dhulihan/grump
 ```
 
+* You can also download pre-build binaries on the [releases](./releases) page.
+
 ## Usage
 
 ```
