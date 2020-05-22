@@ -16,8 +16,6 @@ builds:
   ignore:
     - goos: freebsd
     - goos: darwin
-archives:
-  - format: binary
 checksum:
   name_template: 'checksums.txt'
 snapshot:

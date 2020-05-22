@@ -10,7 +10,7 @@ brews:
   - name: grump
     github:
       owner: dhulihan
-      name: homebrew-repo
+      name: homebrew-grump
     download_strategy: CurlDownloadStrategy
     folder: formula
     homepage: "https://github.com/dhulihan/grump"
@@ -24,9 +24,6 @@ builds:
   ignore:
     - goos: freebsd
     - goos: linux
-# uncomment if you want pure binary artifacts
-#archives:
-  #- format: binary
 checksum:
   name_template: 'checksums.txt'
 snapshot:

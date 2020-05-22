@@ -34,7 +34,8 @@ go get github.com/dhulihan/grump
 ### Mac OSX
 
 ```sh
-brew install dhulihan/grump
+brew tap dhulihan/grump
+brew install grump
 ```
 
 Alternatively, you can install the latest (possibly unreleased) version:
