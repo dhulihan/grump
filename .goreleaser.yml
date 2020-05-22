@@ -6,6 +6,14 @@ before:
     - go mod download
     # you may remove this if you don't need go generate
     - go generate ./...
+brews:
+  - name: grump
+    github:
+      owner: dhulihan
+      name: homebrew-repo
+    download_strategy: CurlDownloadStrategy
+    folder: formula
+    homepage: "https://github.com/dhulihan/grump"
 builds:
 - env:
   - CGO_ENABLED=1
