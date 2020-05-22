@@ -34,6 +34,12 @@ go get github.com/dhulihan/grump
 ### Mac OSX
 
 ```sh
+brew install dhulihan/grump
+```
+
+Alternatively, you can install the latest (possibly unreleased) version:
+
+```sh
 go get github.com/dhulihan/grump
 ```
 
@@ -64,7 +70,7 @@ docker-compose run build
 
 ```sh
 VERSION=0.0.0
-git tag VERSION
-git push origin VERSION
+git tag $VERSION
+git push origin $VERSION
 goreleaser release --rm-dist
 ```
