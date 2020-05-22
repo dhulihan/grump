@@ -1,3 +1,3 @@
 #!/bin/bash
 
-goreleaser --snapshot --skip-publish --rm-dist -f .goreleaser-linux.yml
+goreleaser --skip-publish --rm-dist -f .goreleaser-linux.yml
