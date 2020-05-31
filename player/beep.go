@@ -13,14 +13,42 @@ import (
 	"github.com/faiface/beep/speaker"
 	"github.com/faiface/beep/vorbis"
 	"github.com/faiface/beep/wav"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
+)
+
+var (
+	speakerInitialized = false
+
+	prevSampleRate beep.SampleRate
+)
+
+const (
+	// beep quality to use for playing audio
+	quality = 4
+)
+
+var (
+	// maxSampleRate is used for resampling various audio formats. We also set
+	// the sample rate of the speaker to this, so it essentially controls the
+	// maximum quality of files played by BeepAudioPlayer.
+	maxSampleRate beep.SampleRate = 44100
 )
 
 // BeepAudioPlayer is an audio player implementation that uses beep
 type BeepAudioPlayer struct{}
 
-// ap is the audio panel for the controller
-type ap struct {
+// BeepController manages playing audio.
+//
+// TODO: make this an interface. this is fine for now since we're only using
+// beep our audio player.
+type BeepController struct {
+	audioPanel *audioPanel
+	path       string
+	done       chan (bool)
+}
+
+// audioPanel is the audio panel for the controller
+type audioPanel struct {
 	sampleRate beep.SampleRate
 	ctrl       *beep.Ctrl
 	resampler  *beep.Resampler
@@ -32,11 +60,18 @@ type ap struct {
 // newAudioPanel creates a new audio panel.
 //
 // count - number of times to repeat the track
-func newAudioPanel(sampleRate beep.SampleRate, streamer beep.StreamSeekCloser, count int) *ap {
+func newAudioPanel(sampleRate beep.SampleRate, streamer beep.StreamSeekCloser, count int) *audioPanel {
 	ctrl := &beep.Ctrl{Streamer: beep.Loop(count, streamer)}
-	resampler := beep.ResampleRatio(4, 1, ctrl)
+
+	log.WithFields(log.Fields{
+		"src": sampleRate,
+		"dst": maxSampleRate,
+	}).Debug("resampling")
+
+	resampler := beep.Resample(quality, sampleRate, maxSampleRate, ctrl)
+
 	volume := &effects.Volume{Streamer: resampler, Base: 2}
-	return &ap{
+	return &audioPanel{
 		sampleRate: sampleRate,
 		ctrl:       ctrl,
 		resampler:  resampler,
@@ -45,14 +80,15 @@ func newAudioPanel(sampleRate beep.SampleRate, streamer beep.StreamSeekCloser, c
 	}
 }
 
+// NewBeepAudioPlayer --
 func NewBeepAudioPlayer() (*BeepAudioPlayer, error) {
 	bmp := BeepAudioPlayer{}
 	return &bmp, nil
 }
 
-// returns an error and channel that specifies if the media is done playing
-func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (*Controller, error) {
-	c := Controller{
+// Play a track and return a controller that lets you perform changes to a running track.
+func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (AudioController, error) {
+	c := BeepController{
 		path: track.Path,
 		done: make(chan (bool)),
 	}
@@ -64,10 +100,6 @@ func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (*Controller,
 	// do not close file io, this should get freed up when we close the streamer
 	//defer f.Close()
 
-	// assume everything is mp3 for now
-	// TODO: support other formats
-	// TODO: don't do this on every file, since this resets the speaker
-	// WARNING: must close streamer in caller since we're not doing this here
 	var s beep.StreamSeekCloser
 	var format beep.Format
 
@@ -96,22 +128,23 @@ func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (*Controller,
 		return nil, fmt.Errorf("unsupported file type [%s]", track.FileType)
 	}
 
-	// do not close streamer, no audio will play
-	//defer streamer.Close()
-
-	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/30))
-
 	// number of times to repeat the track
 	count := 1
 	if repeat {
 		count = -1
 	}
 
-	c.ap = newAudioPanel(format.SampleRate, s, count)
+	if !speakerInitialized {
+		log.WithField("sampleRate", format.SampleRate).Debug("init speaker")
+		speaker.Init(maxSampleRate, format.SampleRate.N(time.Second/30))
+		speakerInitialized = true
+	}
+
+	c.audioPanel = newAudioPanel(format.SampleRate, s, count)
 
 	// WARNING: speaker.Play is async
-	speaker.Play(beep.Seq(c.ap.volume, beep.Callback(func() {
-		logrus.WithField("path", track.Path).Debug("streamer callback firing")
+	speaker.Play(beep.Seq(c.audioPanel.volume, beep.Callback(func() {
+		log.WithField("path", track.Path).Trace("streamer callback firing")
 		c.Stop()
 	})))
 
@@ -119,21 +152,21 @@ func (bmp *BeepAudioPlayer) Play(track library.Track, repeat bool) (*Controller,
 }
 
 // Done returns a done channel
-func (c *Controller) Done() chan (bool) {
+func (c *BeepController) Done() chan (bool) {
 	return c.done
 }
 
 // Progress returns the current state of playing audio.
-func (c *Controller) Progress() (PlayState, error) {
+func (c *BeepController) Progress() (PlayState, error) {
 	speaker.Lock()
-	p := c.ap.streamer.Position()
-	position := c.ap.sampleRate.D(p)
-	l := c.ap.streamer.Len()
-	length := c.ap.sampleRate.D(l)
+	p := c.audioPanel.streamer.Position()
+	position := c.audioPanel.sampleRate.D(p)
+	l := c.audioPanel.streamer.Len()
+	length := c.audioPanel.sampleRate.D(l)
 	percentageComplete := float32(p) / float32(l)
-	volume := c.ap.volume.Volume
-	speed := c.ap.resampler.Ratio()
-	finished := c.ap.finished
+	volume := c.audioPanel.volume.Volume
+	speed := c.audioPanel.resampler.Ratio()
+	finished := c.audioPanel.finished
 	speaker.Unlock()
 
 	positionStatus := fmt.Sprintf("%v / %v", position.Round(time.Second), length.Round(time.Second))
@@ -151,92 +184,101 @@ func (c *Controller) Progress() (PlayState, error) {
 }
 
 // PauseToggle pauses/unpauses audio. Returns true if currently paused, false if unpaused.
-func (c *Controller) PauseToggle() bool {
+func (c *BeepController) PauseToggle() bool {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	c.ap.ctrl.Paused = !c.ap.ctrl.Paused
-	return c.ap.ctrl.Paused
+	c.audioPanel.ctrl.Paused = !c.audioPanel.ctrl.Paused
+	return c.audioPanel.ctrl.Paused
 }
 
-func (c *Controller) VolumeUp() {
+// Paused returns current pause state
+func (c *BeepController) Paused() bool {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	c.ap.volume.Volume += 0.1
+	return c.audioPanel.ctrl.Paused
 }
 
-func (c *Controller) VolumeDown() {
+// VolumeUp the playing track
+func (c *BeepController) VolumeUp() {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	c.ap.volume.Volume -= 0.1
+	c.audioPanel.volume.Volume += 0.1
+}
+
+// VolumeDown the playing track
+func (c *BeepController) VolumeDown() {
+	speaker.Lock()
+	defer speaker.Unlock()
+
+	c.audioPanel.volume.Volume -= 0.1
 }
 
 // SpeedUp increases speed
-func (c *Controller) SpeedUp() {
+func (c *BeepController) SpeedUp() {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	c.ap.resampler.SetRatio(c.ap.resampler.Ratio() * 16 / 15)
+	c.audioPanel.resampler.SetRatio(c.audioPanel.resampler.Ratio() * 16 / 15)
 }
 
 // SpeedDown slows down speed
-func (c *Controller) SpeedDown() {
+func (c *BeepController) SpeedDown() {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	c.ap.resampler.SetRatio(c.ap.resampler.Ratio() * 15 / 16)
+	c.audioPanel.resampler.SetRatio(c.audioPanel.resampler.Ratio() * 15 / 16)
 }
 
 // SeekForward moves progress forward
-func (c *Controller) SeekForward() error {
+func (c *BeepController) SeekForward() error {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	newPos := c.ap.streamer.Position()
-	newPos += c.ap.sampleRate.N(time.Second * SeekSecs)
+	newPos := c.audioPanel.streamer.Position()
+	newPos += c.audioPanel.sampleRate.N(time.Second * SeekSecs)
 	if newPos < 0 {
 		newPos = 0
 	}
-	if newPos >= c.ap.streamer.Len() {
-		newPos = c.ap.streamer.Len() - SeekSecs
+	if newPos >= c.audioPanel.streamer.Len() {
+		newPos = c.audioPanel.streamer.Len() - SeekSecs
 	}
-	if err := c.ap.streamer.Seek(newPos); err != nil {
+	if err := c.audioPanel.streamer.Seek(newPos); err != nil {
 		return fmt.Errorf("could not seek to new position [%d]: %s", newPos, err)
 	}
 	return nil
 }
 
 // SeekBackward moves progress backward
-func (c *Controller) SeekBackward() error {
+func (c *BeepController) SeekBackward() error {
 	speaker.Lock()
 	defer speaker.Unlock()
 
-	newPos := c.ap.streamer.Position()
-	newPos -= c.ap.sampleRate.N(time.Second * SeekSecs)
+	newPos := c.audioPanel.streamer.Position()
+	newPos -= c.audioPanel.sampleRate.N(time.Second * SeekSecs)
 	if newPos < 0 {
 		newPos = 0
 	}
-	if newPos >= c.ap.streamer.Len() {
-		newPos = c.ap.streamer.Len() - 1
+	if newPos >= c.audioPanel.streamer.Len() {
+		newPos = c.audioPanel.streamer.Len() - 1
 	}
-	if err := c.ap.streamer.Seek(newPos); err != nil {
+	if err := c.audioPanel.streamer.Seek(newPos); err != nil {
 		return fmt.Errorf("could not seek to new position [%d]: %s", newPos, err)
 	}
 	return nil
 }
 
 // Stop must be thread safe
-func (c *Controller) Stop() {
+func (c *BeepController) Stop() {
 	// free up streamer
 	// NOTE: this will cause the stremer to finish, and the seq callback will
 	// fire
-	c.ap.finished = true
+	c.audioPanel.finished = true
 
-	if c.ap.streamer == nil {
-		return
+	if c.audioPanel.streamer != nil {
+		log.Trace("closing audioPanel streamer")
+		c.audioPanel.streamer.Close()
 	}
-
-	c.ap.streamer.Close()
 }

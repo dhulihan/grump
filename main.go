@@ -22,7 +22,7 @@ var (
 func main() {
 	ctx := context.Background()
 
-	err := config.Setup(ctx)
+	c, err := config.Setup(ctx)
 	if err != nil {
 		logrus.WithError(err).Fatal("could not set up config")
 	}
@@ -39,11 +39,11 @@ func main() {
 		logrus.WithError(err).Fatal("could not set up audio library")
 	}
 
-	count, err := audioShelf.Scan()
+	count, err := audioShelf.LoadTracks()
 	if err != nil {
-		logrus.WithError(err).Fatal("could not scan audio library")
+		logrus.WithError(err).Fatal("could not load audio library")
 	}
-	logrus.WithField("count", count).Info("scanned library")
+	logrus.WithField("count", count).Info("loaded library")
 
 	audioShelves := []library.AudioShelf{audioShelf}
 	db, err := library.NewLibrary(audioShelves)
@@ -61,7 +61,7 @@ func main() {
 		Commit:  commit,
 	}
 
-	err = ui.Start(ctx, build, db, player)
+	err = ui.Start(ctx, build, db, player, c.Loggers())
 	if err != nil {
 		logrus.WithError(err).Fatal("ui exited with an error")
 	}
