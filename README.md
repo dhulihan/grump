@@ -127,7 +127,7 @@ log_file: grump.log
 ./scripts/build-linux.sh
 
 # build for linux (non-linux host)
-docker-compose run build
+docker-compose run build-linux
 
 # build for darwin (darwin host)
 ./scripts/build-darwin.sh
