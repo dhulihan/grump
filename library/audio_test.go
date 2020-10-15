@@ -20,6 +20,8 @@ func TestShouldInclude(t *testing.T) {
 		{"my-dir/99-11-tame_impala-glimmer.MP3", true},
 		{"my-dir/99-11-tame_impala-glimmer.flac", true},
 		{"my-dir/99-11-tame_impala-glimmer.wav", true},
+		{"my-dir/foo.zip", false},
+		{"my-dir/foo.pdf", false},
 		{"my-dir/Cover.jpg", false},
 	}
 

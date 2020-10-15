@@ -13,11 +13,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type trackTarget int
+
 const (
 	columnStatus = iota
 	columnArtist
 	columnAlbum
 	columnTrack
+	columnRating
 
 	trackIconEmptyText   = "  "
 	trackIconPlayingText = "🔈"
@@ -25,13 +28,20 @@ const (
 
 	// check audio progess at this interval
 	checkAudioMillis = 500
+
+	// track target types
+	playing trackTarget = iota
+	hovered
+	next
+	prev
 )
 
 // TrackPage is a page that displays playable audio tracks
 type TrackPage struct {
+	shelf                      library.AudioShelf
 	tracks                     []library.Track
 	player                     player.AudioPlayer
-	currentlyPlayingController *player.Controller
+	currentlyPlayingController player.AudioController
 	currentlyPlayingTrack      *library.Track
 	currentlyPlayingRow        int
 
@@ -39,63 +49,56 @@ type TrackPage struct {
 	left        *tview.List
 	center      *tview.Flex
 	logBox      *tview.TextView
-	trackBox    *tview.Table
+	trackList   *tview.Table
 	progressBox *tview.Table
-
-	theme *tview.Theme
+	editForm    *tview.Form
 }
 
 // NewTrackPage generates the track page
-func NewTrackPage(ctx context.Context, ml library.AudioShelf, pl player.AudioPlayer) *TrackPage {
-	theme := defaultTheme()
+func NewTrackPage(ctx context.Context, shelf library.AudioShelf, pl player.AudioPlayer) *TrackPage {
 
 	// Create the basic objects.
-	trackBox := tview.NewTable().SetBorders(true).SetBordersColor(theme.BorderColor)
-
-	//logBox := tview.NewBox().SetBorder(true).SetBorderColor(theme.BorderColor)
-	logBox := tview.NewTextView().
-		SetTextColor(theme.BorderColor)
+	trackList := tview.NewTable().SetBorders(true).SetBordersColor(theme.BorderColor)
 
 	progressBox := tview.NewTable()
 	progressBox.SetBorder(true).SetBorderColor(theme.BorderColor)
 
 	p := &TrackPage{
-		tracks:      ml.Tracks(),
+		//editForm:    form,
+		shelf:       shelf,
+		tracks:      shelf.Tracks(),
 		player:      pl,
-		logBox:      logBox,
-		trackBox:    trackBox,
+		logBox:      statusBar,
+		trackList:   trackList,
 		progressBox: progressBox,
-		theme:       theme,
 	}
-
-	// hook our logger up to logBox so we can see log messages onscreen
-	log.SetOutput(logBox)
-	log.SetFormatter(p)
 
 	return p
 }
 
 // Page populates the layout for the track page
 func (t *TrackPage) Page(ctx context.Context) tview.Primitive {
-	t.trackColumns(t.trackBox)
+	t.trackColumns(t.trackList)
 
 	for i, track := range t.tracks {
 		// incr by one to pass table headers
-		t.trackCell(t.trackBox, i+1, track)
+		t.trackCell(t.trackList, i+1, track)
 	}
 
-	t.trackBox.
+	t.trackList.
 		// fired on Escape, Tab, or Backtab key
 		SetDoneFunc(func(key tcell.Key) {
 			log.Debugf("done func firing, key [%v]", key)
 		}).
-		SetSelectable(true, false).SetSelectedFunc(t.cellChosen).SetSelectedStyle(t.theme.SecondaryTextColor, t.theme.PrimitiveBackgroundColor, tcell.AttrNone)
-	//t.trackBox.SetSelectedStyle(t.theme.TertiaryTextColor, t.theme.PrimitiveBackgroundColor, tcell.AttrNone)
+		SetSelectable(true, false).SetSelectedFunc(t.cellChosen).SetSelectedStyle(theme.SecondaryTextColor, theme.PrimitiveBackgroundColor, tcell.AttrNone)
+	//t.trackList.SetSelectedStyle(theme.TertiaryTextColor, theme.PrimitiveBackgroundColor, tcell.AttrNone)
 
-	t.trackBox.SetInputCapture(t.inputCapture)
+	t.trackList.SetInputCapture(t.inputCapture)
+
+	editForm.SetCancelFunc(t.editCancel)
 
 	main := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.trackBox, 0, 3, true).
+		AddItem(t.trackList, 0, 3, true).
 		AddItem(t.progressBox, 6, 1, false).
 		AddItem(t.logBox, 1, 1, false)
 
@@ -111,45 +114,291 @@ func (t *TrackPage) Page(ctx context.Context) tview.Primitive {
 	return flex
 }
 
-// Format is a custom log formatter that allows write logrus entries to the ui
-func (t *TrackPage) Format(entry *log.Entry) ([]byte, error) {
-	// clear out the log box before writing text to it
-	t.logBox.Clear()
-
-	lf := &log.TextFormatter{
-		DisableTimestamp: true,
-	}
-	return lf.Format(entry)
-}
-
 // main key input handler for this page
 func (t *TrackPage) inputCapture(event *tcell.EventKey) *tcell.EventKey {
 	// placeholder nil check for convenience
-	log.Debugf("input capture firing, name [%s] key [%d] rune [%s]", event.Name(), event.Key(), string(event.Rune()))
+	log.Tracef("input capture firing, name [%s] key [%d] rune [%s]", event.Name(), event.Key(), string(event.Rune()))
 
-	// something is currently playing, handle that
-	if t.currentlyPlayingController != nil {
-		return t.currentlyPlayingInputCapture(event)
-	}
+	globalInputCapture(event)
 
 	switch event.Key() {
 	case tcell.KeyRune:
 		// attempt to use rune as string
 		s := string(event.Rune())
 		switch s {
-		case "?":
-			pages.SwitchToPage("help")
-		case "q":
-			log.Info("exiting")
-			app.Stop()
+		case "D":
+			t.describe(hovered)
 		}
+	}
+
+	// something is currently playing, handle that
+	if t.currentlyPlayingController != nil {
+		return t.currentlyPlayingInputCapture(event)
 	}
 
 	return event
 }
 
+// track fetches a track
+func (t *TrackPage) track(target trackTarget) (*library.Track, error) {
+	var track *library.Track
+
+	switch target {
+	case playing:
+		if t.currentlyPlayingTrack == nil {
+			return nil, fmt.Errorf("no track currently playing")
+		}
+
+		track = t.currentlyPlayingTrack
+	// TODO: hovered does not work yet
+	case hovered:
+		row, column := t.trackList.GetOffset()
+		track = &t.tracks[row]
+		log.WithFields(log.Fields{"row": row, "column": column}).Debug("currently hovered track")
+
+		return track, nil
+	default:
+		return nil, fmt.Errorf("trackTarget not supported: %v", target)
+	}
+
+	log.WithFields(log.Fields{"track": track}).Debug("track targeted")
+	return track, nil
+}
+
+func (t *TrackPage) describe(target trackTarget) {
+	track, err := t.track(target)
+	if err != nil {
+		log.WithError(err).Error("could not target track")
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"title":       track.Title,
+		"album":       track.Album,
+		"artist":      track.Artist,
+		"rating":      track.Rating,
+		"ratingEmail": track.RatingEmail,
+		"score":       Score(track.Rating),
+		"playCount":   track.PlayCount,
+	}).Info("describing track")
+}
+
+// inputDone is used to enhance to form input movement
+func (t *TrackPage) inputDone(key tcell.Key) {
+	log.Tracef("modal input capture firing, key [%d] %s", key, tcell.KeyNames[key])
+	// perform this asynchronously to avoid weird focus state where the
+	// InputField holds on to focus
+	go func() {
+		app.QueueUpdateDraw(func() {
+			switch key {
+			case tcell.KeyEnter:
+				t.save()
+				pages.HidePage("edit")
+				editForm.Blur()
+			case tcell.KeyEscape:
+				pages.HidePage("edit")
+				editForm.Blur()
+			case tcell.KeyUp:
+				fi, _ := editForm.GetFocusedItemIndex()
+				index := fi - 1
+				editForm.SetFocus(index)
+				app.SetFocus(editForm)
+			case tcell.KeyDown:
+				fi, _ := editForm.GetFocusedItemIndex()
+				index := fi + 1
+				editForm.SetFocus(index)
+				app.SetFocus(editForm)
+			}
+		})
+	}()
+}
+
+func (t *TrackPage) editCancel() {
+	pages.SwitchToPage("tracks")
+
+	// unpause
+	if t.currentlyPlayingController.Paused() {
+		t.pauseToggle()
+	}
+}
+
+func (t *TrackPage) edit(target trackTarget) {
+	log.Debug("editing track")
+
+	track, err := t.track(target)
+	if err != nil {
+		log.WithError(err).Error("could not target track")
+		return
+	}
+
+	// pause
+	if !t.currentlyPlayingController.Paused() {
+		t.pauseToggle()
+	}
+
+	// if blank, use previous album/artist
+	if track.Album == "" {
+		track.Album = getFormInputText(editForm, "Album")
+	}
+
+	if track.Artist == "" {
+		track.Artist = getFormInputText(editForm, "Artist")
+	}
+
+	editForm.Clear(true).
+		AddFormItem(newInputField("Title", track.Title, t.inputDone)).
+		AddFormItem(newInputField("Album", track.Album, t.inputDone)).
+		AddFormItem(newInputField("Artist", track.Artist, t.inputDone)).
+		AddFormItem(newDropDown("Score", Scores, indexOf(Scores, Score(track.Rating)))).
+		AddButton("Save", t.save).
+		AddButton("Cancel", t.editCancel)
+
+	editForm.SetBorder(true).SetTitle("Edit Track").SetTitleAlign(tview.AlignLeft)
+	pages.ShowPage("edit")
+	app.SetFocus(editForm)
+}
+
+func (t *TrackPage) save() {
+	log.Debug("saving track")
+	ctx := context.Background()
+
+	prev, err := t.track(playing)
+	if err != nil {
+		log.WithError(err).Error("could not target track")
+		return
+	}
+	row := t.currentlyPlayingRow
+	track := prev
+
+	_, score := t.dropDown("Score").GetCurrentOption()
+
+	track.Title = inputField(editForm, "Title").GetText()
+	track.Album = inputField(editForm, "Album").GetText()
+	track.Artist = inputField(editForm, "Artist").GetText()
+	track.Rating = Rating(score)
+
+	log.WithFields(log.Fields{
+		"title":  track.Title,
+		"album":  track.Album,
+		"artist": track.Artist,
+		"rating": track.Rating,
+		"row":    row,
+	}).Debug("collected track data from form")
+
+	_, err = t.shelf.SaveTrack(ctx, prev, track)
+	if err != nil {
+		log.WithField("track", track).WithError(err).Error("could not save track")
+		return
+	}
+
+	// update track row
+	t.trackCell(t.trackList, row, *track)
+
+	// update cache
+	t.tracks[row-1] = *track
+
+	// switch back to tracks page
+	pages.SwitchToPage("tracks")
+
+	// unpause
+	if t.currentlyPlayingController.Paused() {
+		t.pauseToggle()
+	}
+}
+
+func (t *TrackPage) confirmDelete(ctx context.Context, target trackTarget) {
+	track, err := t.track(target)
+	if err != nil {
+		log.WithError(err).Error("could not target track")
+		return
+	}
+
+	if !t.currentlyPlayingController.Paused() {
+		t.pauseToggle()
+	}
+
+	msg := fmt.Sprintf(`
+	Delete?
+
+	Title: %s
+	Album: %s
+	Artist: %s
+
+	%s`,
+		track.Title,
+		track.Album,
+		track.Artist,
+		track.Path,
+	)
+
+	deleteModal = tview.NewModal().
+		SetText(msg).
+		AddButtons([]string{"Delete", "Cancel"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Delete" {
+				err := t.deleteTrack(ctx)
+
+				if err != nil {
+					log.WithError(err).Error("could not delete track")
+				}
+			}
+			app.SetRoot(pages, true).SetFocus(t.trackList)
+		})
+
+	app.SetRoot(deleteModal, false).SetFocus(deleteModal)
+}
+
+func (t *TrackPage) deleteTrack(ctx context.Context) error {
+	track, err := t.track(playing)
+	if err != nil {
+		return err
+	}
+	log.WithField("track", track).Debug("deleting track")
+
+	row := t.currentlyPlayingRow
+
+	// stop playing
+	t.stopCurrentlyPlaying()
+
+	// delete from library
+	err = t.shelf.DeleteTrack(ctx, track)
+	if err != nil {
+		return err
+	}
+
+	// delete from cache
+	removed := t.removeTrackFromCache(row - 1)
+	log.WithFields(log.Fields{
+		"trackRemovedFromCache": removed,
+		"row":                   row,
+	}).Debug("track removed from cache")
+
+	// update ui
+	t.trackList.RemoveRow(row)
+
+	// log
+	log.WithFields(log.Fields{
+		"track": track,
+	}).Info("deleted track")
+
+	// play next track
+	t.cellChosen(row, 0)
+
+	return nil
+}
+
+// remove track from cache and return it
+func (t *TrackPage) removeTrackFromCache(i int) library.Track {
+	track := t.tracks[i]
+	t.tracks = append(t.tracks[:i], t.tracks[i+1:]...)
+	return track
+
+}
+
 // handle key input while a track is playing
 func (t *TrackPage) currentlyPlayingInputCapture(event *tcell.EventKey) *tcell.EventKey {
+	ctx := context.Background()
+
 	switch event.Key() {
 	case tcell.KeyESC:
 		t.stopCurrentlyPlaying()
@@ -166,10 +415,41 @@ func (t *TrackPage) currentlyPlayingInputCapture(event *tcell.EventKey) *tcell.E
 			log.WithError(err).Error("problem seeking forward")
 			return event
 		}
+	case tcell.KeyDelete:
+		t.confirmDelete(ctx, playing)
+		return event
 	case tcell.KeyRune:
 		// attempt to use rune as string
 		s := string(event.Rune())
 		switch s {
+		// key - playing
+		// shift+key - hovered
+		case "0":
+			t.SetScore(Score00)
+		case ")":
+			t.SetScore(Score05)
+		case "1":
+			t.SetScore(Score10)
+		case "!":
+			t.SetScore(Score15)
+		case "2":
+			t.SetScore(Score20)
+		case "@":
+			t.SetScore(Score25)
+		case "3":
+			t.SetScore(Score30)
+		case "#":
+			t.SetScore(Score35)
+		case "4":
+			t.SetScore(Score40)
+		case "$":
+			t.SetScore(Score45)
+		case "5":
+			t.SetScore(Score50)
+		case "d":
+			t.describe(playing)
+		case "e":
+			t.edit(playing)
 		case " ":
 			t.pauseToggle()
 		case "=":
@@ -186,10 +466,9 @@ func (t *TrackPage) currentlyPlayingInputCapture(event *tcell.EventKey) *tcell.E
 		case "[":
 			t.skipForward(-1)
 		case "?":
-			log.Debug("switching to help page")
+			log.Trace("switching to help page")
 			pages.SwitchToPage("help")
 		case "q":
-			log.Info("exiting")
 			app.Stop()
 		}
 	}
@@ -203,17 +482,17 @@ func (t *TrackPage) pauseToggle() {
 	}
 
 	log.Debug("pausing currently playing track")
-	paused := t.currentlyPlayingController.PauseToggle()
+	t.currentlyPlayingController.PauseToggle()
 
 	if t.currentlyPlayingRow == 0 {
 		log.Debug("nothing currently playing, done toggling pause")
 		return
 	}
 
-	if paused {
-		t.setTrackRowStyle(t.currentlyPlayingRow, t.theme.SecondaryTextColor, trackIconPausedText)
+	if t.currentlyPlayingController.Paused() {
+		t.setTrackRowStyle(t.currentlyPlayingRow, theme.SecondaryTextColor, trackIconPausedText)
 	} else {
-		t.setTrackRowStyle(t.currentlyPlayingRow, t.theme.TertiaryTextColor, trackIconPlayingText)
+		t.setTrackRowStyle(t.currentlyPlayingRow, theme.TertiaryTextColor, trackIconPlayingText)
 	}
 }
 
@@ -223,7 +502,12 @@ func (t *TrackPage) cellChosen(row, column int) {
 	// TODO: maybe fire this off at an interval later
 	t.logBox.Clear()
 
-	log.Debugf("selecting row %d column %d", row, column)
+	if row == 0 {
+		log.Info("please select a track")
+		return
+	}
+
+	log.Tracef("selecting row %d column %d", row, column)
 
 	if row > len(t.tracks) {
 		log.Warnf("row out of range %d column %d, length %d", row, column, len(t.tracks))
@@ -234,7 +518,8 @@ func (t *TrackPage) cellChosen(row, column int) {
 
 	if t.currentlyPlayingRow != 0 && t.currentlyPlayingController != nil && t.currentlyPlayingTrack != nil {
 		log.WithFields(log.Fields{
-			"title": t.currentlyPlayingTrack.Title,
+			"track": t.currentlyPlayingTrack,
+			"row":   t.currentlyPlayingRow,
 		}).Debug("stopping currently playing track")
 		t.stopCurrentlyPlaying()
 	}
@@ -242,7 +527,7 @@ func (t *TrackPage) cellChosen(row, column int) {
 	t.currentlyPlayingRow = row
 
 	// set currently playing row style
-	t.setTrackRowStyle(t.currentlyPlayingRow, t.theme.TertiaryTextColor, trackIconPlayingText)
+	t.setTrackRowStyle(t.currentlyPlayingRow, theme.TertiaryTextColor, trackIconPlayingText)
 
 	t.playTrack(&track)
 }
@@ -250,10 +535,10 @@ func (t *TrackPage) cellChosen(row, column int) {
 // setTrackRowStyle sets the style of a track row. Used for selection, pausing,
 // unpausing, etc.
 func (t *TrackPage) setTrackRowStyle(row int, color tcell.Color, statusColumnText string) {
-	t.trackBox.GetCell(row, columnStatus).SetText(statusColumnText)
-	t.trackBox.GetCell(row, columnArtist).SetTextColor(color)
-	t.trackBox.GetCell(row, columnAlbum).SetTextColor(color)
-	t.trackBox.GetCell(row, columnTrack).SetTextColor(color)
+	t.trackList.GetCell(row, columnStatus).SetText(statusColumnText)
+	t.trackList.GetCell(row, columnArtist).SetTextColor(color)
+	t.trackList.GetCell(row, columnAlbum).SetTextColor(color)
+	t.trackList.GetCell(row, columnTrack).SetTextColor(color)
 }
 
 func (t *TrackPage) playTrack(track *library.Track) {
@@ -288,11 +573,12 @@ func (t *TrackPage) audioPlaying(ctx context.Context) {
 }
 
 func (t *TrackPage) stopCurrentlyPlaying() {
+	log.WithField("row", t.currentlyPlayingRow).Debug("clearing track style")
+	t.setTrackRowStyle(t.currentlyPlayingRow, theme.PrimaryTextColor, trackIconEmptyText)
+
 	if t.currentlyPlayingController == nil {
 		return
 	}
-
-	t.setTrackRowStyle(t.currentlyPlayingRow, t.theme.PrimaryTextColor, trackIconEmptyText)
 
 	t.currentlyPlayingController.Stop()
 	t.currentlyPlayingController = nil
@@ -340,10 +626,11 @@ func (t *TrackPage) skipForward(count int) {
 	}
 
 	log.WithFields(log.Fields{
-		"nextRow":             nextRow,
 		"currentlyPlayingRow": t.currentlyPlayingRow,
+		"nextRow":             nextRow,
 		"totalTracks":         len(t.tracks),
-	}).Debug("playing next track")
+		"skipForward":         count,
+	}).Debug("skipping forward")
 
 	t.cellChosen(nextRow, columnStatus)
 }
@@ -362,22 +649,22 @@ func (t *TrackPage) updateProgress(prog player.PlayState, track *library.Track) 
 
 	app.QueueUpdateDraw(func() {
 		t.progressBox.SetCell(0, 0, tview.NewTableCell("Title"))
-		t.progressBox.SetCell(0, 1, &tview.TableCell{Text: track.Title, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(0, 1, &tview.TableCell{Text: track.Title, Color: theme.TertiaryTextColor})
 		t.progressBox.SetCell(1, 0, tview.NewTableCell("Album"))
-		t.progressBox.SetCell(1, 1, &tview.TableCell{Text: track.Album, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(1, 1, &tview.TableCell{Text: track.Album, Color: theme.TertiaryTextColor})
 		t.progressBox.SetCell(2, 0, tview.NewTableCell("Artist"))
-		t.progressBox.SetCell(2, 1, &tview.TableCell{Text: track.Artist, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(2, 1, &tview.TableCell{Text: track.Artist, Color: theme.TertiaryTextColor})
 
 		t.progressBox.SetCell(0, 2, tview.NewTableCell("Progress"))
-		t.progressBox.SetCell(0, 3, &tview.TableCell{Text: fmt.Sprintf("%s %d%%", prog.Position, percentageComplete), Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(0, 3, &tview.TableCell{Text: fmt.Sprintf("%s %d%%", prog.Position, percentageComplete), Color: theme.TertiaryTextColor})
 		t.progressBox.SetCell(1, 2, &tview.TableCell{Text: "Volume"})
 		t.progressBox.SetCell(1, 2, tview.NewTableCell("Volume"))
-		t.progressBox.SetCell(1, 3, &tview.TableCell{Text: prog.Volume, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(1, 3, &tview.TableCell{Text: prog.Volume, Color: theme.TertiaryTextColor})
 		t.progressBox.SetCell(2, 2, tview.NewTableCell("Speed"))
-		t.progressBox.SetCell(2, 3, &tview.TableCell{Text: prog.Speed, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(2, 3, &tview.TableCell{Text: prog.Speed, Color: theme.TertiaryTextColor})
 
 		t.progressBox.SetCell(3, 0, tview.NewTableCell("Path"))
-		t.progressBox.SetCell(3, 1, &tview.TableCell{Text: track.Path, Color: t.theme.TertiaryTextColor})
+		t.progressBox.SetCell(3, 1, &tview.TableCell{Text: track.Path, Color: theme.TertiaryTextColor})
 
 	})
 }
@@ -385,27 +672,63 @@ func (t *TrackPage) updateProgress(prog player.PlayState, track *library.Track) 
 func (t *TrackPage) welcome() {
 	t.progressBox.Clear().
 		SetCell(0, 0, tview.NewTableCell("grump")).
-		SetCell(0, 1, &tview.TableCell{Text: fmt.Sprintf("%s", build.Version), Color: t.theme.TitleColor, NotSelectable: true}).
+		SetCell(0, 1, &tview.TableCell{Text: fmt.Sprintf("%s", build.Version), Color: theme.TitleColor, NotSelectable: true}).
 		SetCell(1, 0, tview.NewTableCell("files scanned")).
-		SetCell(1, 1, &tview.TableCell{Text: fmt.Sprintf("%d", len(t.tracks)), Color: t.theme.SecondaryTextColor, NotSelectable: true}).
+		SetCell(1, 1, &tview.TableCell{Text: fmt.Sprintf("%d", len(t.tracks)), Color: theme.SecondaryTextColor, NotSelectable: true}).
 		SetCell(2, 0, tview.NewTableCell("for help, press")).
-		SetCell(2, 1, &tview.TableCell{Text: "?", Color: t.theme.TertiaryTextColor, NotSelectable: true})
-	//SetCell(3, 0, tview.NewTableCell("report bugs at")).
-	//SetCell(3, 1, &tview.TableCell{Text: "github.com/dhulihan/grump", Color: t.theme.GraphicsColor, NotSelectable: true})
+		SetCell(2, 1, &tview.TableCell{Text: "?", Color: theme.TertiaryTextColor, NotSelectable: true})
 }
 
 func (t *TrackPage) trackColumns(table *tview.Table) {
 	table.
-		SetCell(0, columnStatus, &tview.TableCell{Text: trackIconEmptyText, Color: t.theme.TitleColor, NotSelectable: true}).
-		SetCell(0, columnArtist, &tview.TableCell{Text: "Artist", Color: t.theme.TitleColor, NotSelectable: true}).
-		SetCell(0, columnAlbum, &tview.TableCell{Text: "Album", Color: t.theme.TitleColor, NotSelectable: true}).
-		SetCell(0, columnTrack, &tview.TableCell{Text: "Track", Color: t.theme.TitleColor, NotSelectable: true})
+		SetCell(0, columnStatus, &tview.TableCell{Text: trackIconEmptyText, Color: theme.TitleColor, NotSelectable: true}).
+		SetCell(0, columnArtist, &tview.TableCell{Text: "Artist", Color: theme.TitleColor, NotSelectable: true}).
+		SetCell(0, columnAlbum, &tview.TableCell{Text: "Album", Color: theme.TitleColor, NotSelectable: true}).
+		SetCell(0, columnTrack, &tview.TableCell{Text: "Title", Color: theme.TitleColor, NotSelectable: true}).
+		SetCell(0, columnRating, &tview.TableCell{Text: "Rating", Color: theme.TitleColor, NotSelectable: true})
+}
+
+func (t *TrackPage) SetScore(score string) {
+	ctx := context.Background()
+	log.WithFields(log.Fields{"score": score}).Debug("setting score")
+
+	track := t.currentlyPlayingTrack
+	row := t.currentlyPlayingRow
+
+	// convert rating
+	rating := Rating(score)
+	track.Rating = rating
+	_, err := t.shelf.SaveTrack(ctx, nil, track)
+	if err != nil {
+		log.WithError(err).WithField("rating", rating).Error("could not set rating on track")
+		return
+	}
+
+	// update track row
+	t.trackCell(t.trackList, row, *track)
+
+	// restore "playing" visual state
+	t.setTrackRowStyle(t.currentlyPlayingRow, theme.TertiaryTextColor, trackIconPlayingText)
+
+	// update cache
+	t.tracks[row-1] = *track
 }
 
 func (t *TrackPage) trackCell(table *tview.Table, row int, track library.Track) {
+	title := track.Title
+
+	// use path if title is empty
+	if track.Title == "" {
+		title = track.Path
+	}
+
+	scoreText := Score(track.Rating)
+	scoreColor := ScoreColor(scoreText)
+
 	table.
-		SetCell(row, columnStatus, &tview.TableCell{Text: trackIconEmptyText, Color: t.theme.PrimaryTextColor}).
-		SetCell(row, columnArtist, &tview.TableCell{Text: track.Artist, Color: t.theme.PrimaryTextColor, Expansion: 4, MaxWidth: 8}).
-		SetCell(row, columnAlbum, &tview.TableCell{Text: track.Album, Color: t.theme.PrimaryTextColor, Expansion: 4, MaxWidth: 8}).
-		SetCell(row, columnTrack, &tview.TableCell{Text: track.Title, Color: t.theme.PrimaryTextColor, Expansion: 10, MaxWidth: 8})
+		SetCell(row, columnStatus, &tview.TableCell{Text: trackIconEmptyText, Color: theme.PrimaryTextColor}).
+		SetCell(row, columnArtist, &tview.TableCell{Text: track.Artist, Color: theme.PrimaryTextColor, Expansion: 4, MaxWidth: 8}).
+		SetCell(row, columnAlbum, &tview.TableCell{Text: track.Album, Color: theme.PrimaryTextColor, Expansion: 4, MaxWidth: 8}).
+		SetCell(row, columnTrack, &tview.TableCell{Text: title, Color: theme.PrimaryTextColor, Expansion: 10, MaxWidth: 8}).
+		SetCell(row, columnRating, &tview.TableCell{Text: scoreText, Color: scoreColor})
 }

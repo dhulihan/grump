@@ -11,7 +11,21 @@ const (
 
 // AudioPlayer is an interface for playing audio tracks.
 type AudioPlayer interface {
-	Play(library.Track, bool) (*Controller, error)
+	Play(library.Track, bool) (AudioController, error)
+}
+
+// AudioController will control playing audio
+type AudioController interface {
+	Paused() bool
+	PauseToggle() bool
+	Progress() (PlayState, error)
+	SeekForward() error
+	SeekBackward() error
+	SpeedUp()
+	SpeedDown()
+	Stop()
+	VolumeUp()
+	VolumeDown()
 }
 
 // PlayState represents the current state of playing audio.
@@ -21,14 +35,4 @@ type PlayState struct {
 	Position string
 	Volume   string
 	Speed    string
-}
-
-// Controller manages playing audio.
-//
-// TODO: make this an interface. this is fine for now since we're only using
-// beep our audio player.
-type Controller struct {
-	ap   *ap
-	path string
-	done chan (bool)
 }
