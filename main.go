@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
+	"runtime/pprof"
+
+	_ "net/http/pprof"
 
 	"github.com/dhulihan/grump/internal/config"
 	"github.com/dhulihan/grump/library"
 	"github.com/dhulihan/grump/player"
 	"github.com/dhulihan/grump/ui"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -24,7 +28,7 @@ func main() {
 
 	c, err := config.Setup(ctx)
 	if err != nil {
-		logrus.WithError(err).Fatal("could not set up config")
+		log.WithError(err).Fatal("could not set up config")
 	}
 
 	if len(os.Args) < 2 {
@@ -32,28 +36,42 @@ func main() {
 	}
 
 	path := os.Args[1]
-	logrus.WithField("path", path).Info("starting up")
+	log.WithField("path", path).Info("starting up")
+
+	// enable profiling
+	if c.CPUProfile != "" {
+		log.WithField("file", c.CPUProfile).Debug("starting cpu profile")
+		f, err := os.Create(c.CPUProfile)
+		if err != nil {
+			log.WithError(err).Fatal("could not create cpu profile file")
+		}
+		defer f.Close() // error handling omitted for example
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.WithError(err).Fatal("could not start cpu profile")
+		}
+		defer pprof.StopCPUProfile()
+	}
 
 	audioShelf, err := library.NewLocalAudioShelf(path)
 	if err != nil {
-		logrus.WithError(err).Fatal("could not set up audio library")
+		log.WithError(err).Fatal("could not set up audio library")
 	}
 
 	count, err := audioShelf.LoadTracks()
 	if err != nil {
-		logrus.WithError(err).Fatal("could not load audio library")
+		log.WithError(err).Fatal("could not load audio library")
 	}
-	logrus.WithField("count", count).Info("loaded library")
+	log.WithField("count", count).Info("loaded library")
 
 	audioShelves := []library.AudioShelf{audioShelf}
 	db, err := library.NewLibrary(audioShelves)
 	if err != nil {
-		logrus.WithError(err).Fatal("could not set up player db")
+		log.WithError(err).Fatal("could not set up player db")
 	}
 
 	player, err := player.NewBeepAudioPlayer()
 	if err != nil {
-		logrus.WithError(err).Fatal("could not set up audio player")
+		log.WithError(err).Fatal("could not set up audio player")
 	}
 
 	build := ui.BuildInfo{
@@ -63,7 +81,21 @@ func main() {
 
 	err = ui.Start(ctx, build, db, player, c.Loggers())
 	if err != nil {
-		logrus.WithError(err).Fatal("ui exited with an error")
+		log.WithError(err).Fatal("ui exited with an error")
+	}
+
+	// wrap up mem profile
+	if c.MemProfile != "" {
+		log.WithField("file", c.MemProfile).Debug("finishing mem profile")
+		f, err := os.Create(c.MemProfile)
+		if err != nil {
+			log.WithError(err).Fatal("could not create mem profile file")
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.WithError(err).Fatal("could not write mem profile file")
+		}
 	}
 }
 

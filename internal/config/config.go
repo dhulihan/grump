@@ -18,6 +18,8 @@ type Config struct {
 	LogToFile         bool   `yaml:"log_to_file"`
 	LogFile           string `yaml:"log_file"`
 	LogLevel          string `yaml:"log_level"`
+	CPUProfile        string `yaml:"cpuprofile"`
+	MemProfile        string `yaml:"memprofile"`
 	Columns           []string
 	KeyboardShortcuts map[string]string
 
