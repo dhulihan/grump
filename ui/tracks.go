@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
+
 type trackTarget int
 
 const (
@@ -21,10 +26,6 @@ const (
 	columnAlbum
 	columnTrack
 	columnRating
-
-	trackIconEmptyText   = "  "
-	trackIconPlayingText = "🔈"
-	trackIconPausedText  = "🔇"
 
 	// check audio progess at this interval
 	checkAudioMillis = 500
@@ -38,20 +39,23 @@ const (
 
 // TrackPage is a page that displays playable audio tracks
 type TrackPage struct {
+	// TODO: extract this to a something ui-agnostic
 	shelf                      library.AudioShelf
 	tracks                     []library.Track
 	player                     player.AudioPlayer
 	currentlyPlayingController player.AudioController
 	currentlyPlayingTrack      *library.Track
 	currentlyPlayingRow        int
+	shuffle                    bool
 
 	// layout
-	left        *tview.List
-	center      *tview.Flex
-	logBox      *tview.TextView
-	trackList   *tview.Table
-	progressBox *tview.Table
-	editForm    *tview.Form
+	left         *tview.List
+	center       *tview.Flex
+	logBox       *tview.TextView
+	trackList    *tview.Table
+	playStateBox *tview.Table
+	statusBox    *tview.Table
+	editForm     *tview.Form
 }
 
 // NewTrackPage generates the track page
@@ -60,17 +64,18 @@ func NewTrackPage(ctx context.Context, shelf library.AudioShelf, pl player.Audio
 	// Create the basic objects.
 	trackList := tview.NewTable().SetBorders(true).SetBordersColor(theme.BorderColor)
 
-	progressBox := tview.NewTable()
-	progressBox.SetBorder(true).SetBorderColor(theme.BorderColor)
+	playStateBox := tview.NewTable()
+	playStateBox.SetBorder(true).SetBorderColor(theme.BorderColor)
 
 	p := &TrackPage{
 		//editForm:    form,
-		shelf:       shelf,
-		tracks:      shelf.Tracks(),
-		player:      pl,
-		logBox:      statusBar,
-		trackList:   trackList,
-		progressBox: progressBox,
+		shelf:        shelf,
+		tracks:       shelf.Tracks(),
+		player:       pl,
+		logBox:       statusBar,
+		trackList:    trackList,
+		playStateBox: playStateBox,
+		statusBox:    tview.NewTable(),
 	}
 
 	return p
@@ -98,8 +103,9 @@ func (t *TrackPage) Page(ctx context.Context) tview.Primitive {
 	editForm.SetCancelFunc(t.editCancel)
 
 	main := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.trackList, 0, 3, true).
-		AddItem(t.progressBox, 6, 1, false).
+		AddItem(t.trackList, 0, 14, true).
+		AddItem(t.playStateBox, 0, 2, false).
+		AddItem(t.statusBox, 1, 1, false).
 		AddItem(t.logBox, 1, 1, false)
 
 	// Create the layout.
@@ -457,14 +463,16 @@ func (t *TrackPage) currentlyPlayingInputCapture(event *tcell.EventKey) *tcell.E
 			t.currentlyPlayingController.VolumeUp()
 		case "-":
 			t.currentlyPlayingController.VolumeDown()
+		case "S":
+			t.shuffleToggle()
 		case "+":
 			t.currentlyPlayingController.SpeedUp()
 		case "_":
 			t.currentlyPlayingController.SpeedDown()
 		case "]":
-			t.skipForward(1)
+			t.skip(1)
 		case "[":
-			t.skipForward(-1)
+			t.skip(-1)
 		case "?":
 			log.Trace("switching to help page")
 			pages.SwitchToPage("help")
@@ -473,6 +481,20 @@ func (t *TrackPage) currentlyPlayingInputCapture(event *tcell.EventKey) *tcell.E
 		}
 	}
 	return event
+}
+
+func (t *TrackPage) shuffleToggle() {
+	// thread safe? nope!
+	t.shuffle = !t.shuffle
+	log.WithField("enabled", t.shuffle).Debug("toggling shuffle")
+
+	if t.shuffle {
+		t.statusBox.SetCell(0, 0, tview.NewTableCell("Shuffle"))
+		t.statusBox.SetCell(0, 1, &tview.TableCell{Text: shuffleIconOn, Color: theme.TertiaryTextColor})
+	} else {
+		t.statusBox.SetCellSimple(0, 0, "")
+		t.statusBox.SetCellSimple(0, 1, "")
+	}
 }
 
 func (t *TrackPage) pauseToggle() {
@@ -592,28 +614,33 @@ func (t *TrackPage) checkCurrentlyPlaying() {
 		return
 	}
 
-	prog, err := t.currentlyPlayingController.Progress()
+	ps, err := t.currentlyPlayingController.PlayState()
 	if err != nil {
-		log.WithError(err).Error("could not get audio progress")
+		log.WithError(err).Error("could not get audio play state")
 	}
 
-	t.updateProgress(prog, t.currentlyPlayingTrack)
+	t.updatePlayState(ps, t.currentlyPlayingTrack)
 
 	// check if audio has stopped
-	if prog.Finished {
+	if ps.Finished {
 		log.Debug("track has finished playing")
 
 		// move to next track
-		t.skipForward(1)
+		t.skip(1)
 	}
 }
 
-// skipForward skips forward/backward on the playlist. count can be negative to go backward.
+// skip skips forward/backward on the playlist. count can be negative to go backward.
 //
 // TODO: add unit tests for next track logic
-func (t *TrackPage) skipForward(count int) {
+func (t *TrackPage) skip(count int) {
 	// attempt to play the next track available
 	nextRow := t.currentlyPlayingRow + count
+
+	// if shuffling, choose one at random
+	if t.shuffle {
+		nextRow = rand.Intn(len(t.tracks))
+	}
 
 	// if skipping too far ahead, go to beginning
 	if nextRow <= 0 {
@@ -629,48 +656,44 @@ func (t *TrackPage) skipForward(count int) {
 		"currentlyPlayingRow": t.currentlyPlayingRow,
 		"nextRow":             nextRow,
 		"totalTracks":         len(t.tracks),
-		"skipForward":         count,
-	}).Debug("skipping forward")
+		"skip":                count,
+	}).Debug("skipping to next track")
 
 	t.cellChosen(nextRow, columnStatus)
 }
 
-func (t *TrackPage) updateProgress(prog player.PlayState, track *library.Track) {
-	percentageComplete := int(prog.Progress * 100)
+func (t *TrackPage) updatePlayState(ps player.PlayState, track *library.Track) {
+	percentageComplete := int(ps.Progress * 100)
 
 	log.WithFields(log.Fields{
-		"progress":   prog.Progress,
-		"position":   prog.Position,
-		"volume":     prog.Volume,
-		"speed":      prog.Speed,
+		"progress":   ps.Progress,
+		"position":   ps.Position,
+		"volume":     ps.Volume,
+		"speed":      ps.Speed,
 		"track":      track.Title,
 		"goroutines": runtime.NumGoroutine(),
-	}).Trace("progress")
+	}).Trace("play state update")
 
 	app.QueueUpdateDraw(func() {
-		t.progressBox.SetCell(0, 0, tview.NewTableCell("Title"))
-		t.progressBox.SetCell(0, 1, &tview.TableCell{Text: track.Title, Color: theme.TertiaryTextColor})
-		t.progressBox.SetCell(1, 0, tview.NewTableCell("Album"))
-		t.progressBox.SetCell(1, 1, &tview.TableCell{Text: track.Album, Color: theme.TertiaryTextColor})
-		t.progressBox.SetCell(2, 0, tview.NewTableCell("Artist"))
-		t.progressBox.SetCell(2, 1, &tview.TableCell{Text: track.Artist, Color: theme.TertiaryTextColor})
+		t.playStateBox.SetCell(0, 0, tview.NewTableCell("Title"))
+		t.playStateBox.SetCell(0, 1, &tview.TableCell{Text: track.Title, Color: theme.TertiaryTextColor})
+		t.playStateBox.SetCell(1, 0, tview.NewTableCell("Album"))
+		t.playStateBox.SetCell(1, 1, &tview.TableCell{Text: track.Album, Color: theme.TertiaryTextColor})
+		t.playStateBox.SetCell(2, 0, tview.NewTableCell("Artist"))
+		t.playStateBox.SetCell(2, 1, &tview.TableCell{Text: track.Artist, Color: theme.TertiaryTextColor})
 
-		t.progressBox.SetCell(0, 2, tview.NewTableCell("Progress"))
-		t.progressBox.SetCell(0, 3, &tview.TableCell{Text: fmt.Sprintf("%s %d%%", prog.Position, percentageComplete), Color: theme.TertiaryTextColor})
-		t.progressBox.SetCell(1, 2, &tview.TableCell{Text: "Volume"})
-		t.progressBox.SetCell(1, 2, tview.NewTableCell("Volume"))
-		t.progressBox.SetCell(1, 3, &tview.TableCell{Text: prog.Volume, Color: theme.TertiaryTextColor})
-		t.progressBox.SetCell(2, 2, tview.NewTableCell("Speed"))
-		t.progressBox.SetCell(2, 3, &tview.TableCell{Text: prog.Speed, Color: theme.TertiaryTextColor})
-
-		t.progressBox.SetCell(3, 0, tview.NewTableCell("Path"))
-		t.progressBox.SetCell(3, 1, &tview.TableCell{Text: track.Path, Color: theme.TertiaryTextColor})
-
+		t.playStateBox.SetCell(0, 2, tview.NewTableCell("Progress"))
+		t.playStateBox.SetCell(0, 3, &tview.TableCell{Text: fmt.Sprintf("%s %d%%", ps.Position, percentageComplete), Color: theme.TertiaryTextColor})
+		t.playStateBox.SetCell(1, 2, &tview.TableCell{Text: "Volume"})
+		t.playStateBox.SetCell(1, 2, tview.NewTableCell("Volume"))
+		t.playStateBox.SetCell(1, 3, &tview.TableCell{Text: ps.Volume, Color: theme.TertiaryTextColor})
+		t.playStateBox.SetCell(2, 2, tview.NewTableCell("Speed"))
+		t.playStateBox.SetCell(2, 3, &tview.TableCell{Text: ps.Speed, Color: theme.TertiaryTextColor})
 	})
 }
 
 func (t *TrackPage) welcome() {
-	t.progressBox.Clear().
+	t.playStateBox.Clear().
 		SetCell(0, 0, tview.NewTableCell("grump")).
 		SetCell(0, 1, &tview.TableCell{Text: fmt.Sprintf("%s", build.Version), Color: theme.TitleColor, NotSelectable: true}).
 		SetCell(1, 0, tview.NewTableCell("files scanned")).

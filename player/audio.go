@@ -18,7 +18,7 @@ type AudioPlayer interface {
 type AudioController interface {
 	Paused() bool
 	PauseToggle() bool
-	Progress() (PlayState, error)
+	PlayState() (PlayState, error)
 	SeekForward() error
 	SeekBackward() error
 	SpeedUp()

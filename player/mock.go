@@ -14,19 +14,19 @@ func NewMockAudioPlayer() *MockAudioPlayer {
 }
 
 // Play a track and return a controller that lets you perform changes to a running track.
-func (bmp *MockAudioPlayer) Play(track library.Track, repeat bool) (AudioController, error) {
+func (bmp *MockAudioPlayer) Play(track library.Track, repeat bool) (*MockAudioController, error) {
 	return &MockAudioController{}, nil
 }
 
 type MockAudioController struct{}
 
-func (p *MockAudioController) Paused() bool                 { return false }
-func (p *MockAudioController) PauseToggle() bool            { return true }
-func (p *MockAudioController) Progress() (PlayState, error) { return PlayState{}, nil }
-func (p *MockAudioController) SeekForward() error           { return nil }
-func (p *MockAudioController) SeekBackward() error          { return nil }
-func (p *MockAudioController) SpeedUp()                     {}
-func (p *MockAudioController) SpeedDown()                   {}
-func (p *MockAudioController) Stop()                        {}
-func (p *MockAudioController) VolumeUp()                    {}
-func (p *MockAudioController) VolumeDown()                  {}
+func (p *MockAudioController) Paused() bool                  { return false }
+func (p *MockAudioController) PauseToggle() bool             { return true }
+func (p *MockAudioController) PlayState() (PlayState, error) { return PlayState{}, nil }
+func (p *MockAudioController) SeekForward() error            { return nil }
+func (p *MockAudioController) SeekBackward() error           { return nil }
+func (p *MockAudioController) SpeedUp()                      {}
+func (p *MockAudioController) SpeedDown()                    {}
+func (p *MockAudioController) Stop()                         {}
+func (p *MockAudioController) VolumeUp()                     {}
+func (p *MockAudioController) VolumeDown()                   {}
