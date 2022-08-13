@@ -489,11 +489,9 @@ func (t *TrackPage) shuffleToggle() {
 	log.WithField("enabled", t.shuffle).Debug("toggling shuffle")
 
 	if t.shuffle {
-		t.statusBox.SetCell(0, 0, tview.NewTableCell("Shuffle"))
-		t.statusBox.SetCell(0, 1, &tview.TableCell{Text: shuffleIconOn, Color: theme.TertiaryTextColor})
+		t.statusBox.SetCell(0, 0, tview.NewTableCell(shuffleIconOn+" Shuffle: On"))
 	} else {
 		t.statusBox.SetCellSimple(0, 0, "")
-		t.statusBox.SetCellSimple(0, 1, "")
 	}
 }
 
