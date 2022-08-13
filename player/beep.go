@@ -156,8 +156,8 @@ func (c *BeepController) Done() chan (bool) {
 	return c.done
 }
 
-// Progress returns the current state of playing audio.
-func (c *BeepController) Progress() (PlayState, error) {
+// PlayState returns the current state of playing audio.
+func (c *BeepController) PlayState() (PlayState, error) {
 	speaker.Lock()
 	p := c.audioPanel.streamer.Position()
 	position := c.audioPanel.sampleRate.D(p)

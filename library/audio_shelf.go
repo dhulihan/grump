@@ -10,9 +10,8 @@ import (
 type AudioShelf interface {
 	Tracks() []Track
 
-	// LoadTracks searches for new files to add to the library
+	// LoadTracks fills the shelf with tracks
 	LoadTracks() (count uint64, err error)
-
 	LoadTrack(ctx context.Context, location string) (*Track, error)
 	SaveTrack(ctx context.Context, prev, track *Track) (*Track, error)
 	DeleteTrack(ctx context.Context, track *Track) error

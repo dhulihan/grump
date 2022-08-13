@@ -30,6 +30,7 @@ func NewHelpPage(ctx context.Context) *HelpPage {
 		KeyboardShortcut{"[", "play previous track"},
 		KeyboardShortcut{"=", "volume up"},
 		KeyboardShortcut{"-", "volume down"},
+		KeyboardShortcut{"S", "toggle shuffle"},
 		KeyboardShortcut{"+", "speed up"},
 		KeyboardShortcut{"_", "speed down"},
 		KeyboardShortcut{"q", "quit"},
