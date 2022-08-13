@@ -10,6 +10,3 @@ services:
       - ".:/data"
     entrypoint:
       - ./scripts/build-linux.sh
-    #env_file:
-      #- ${ENV_FILE:-docker/local.env}
-

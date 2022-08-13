@@ -8,7 +8,7 @@ before:
     - go generate ./...
 brews:
   - name: grump
-    github:
+    tap:
       owner: dhulihan
       name: homebrew-grump
     download_strategy: CurlDownloadStrategy
