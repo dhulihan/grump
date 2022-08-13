@@ -103,8 +103,8 @@ func (t *TrackPage) Page(ctx context.Context) tview.Primitive {
 	editForm.SetCancelFunc(t.editCancel)
 
 	main := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(t.trackList, 0, 14, true).
-		AddItem(t.playStateBox, 0, 2, false).
+		AddItem(t.trackList, 0, 3, true).
+		AddItem(t.playStateBox, 5, 1, false).
 		AddItem(t.statusBox, 1, 1, false).
 		AddItem(t.logBox, 1, 1, false)
 
